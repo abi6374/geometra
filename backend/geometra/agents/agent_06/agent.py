@@ -114,11 +114,12 @@ class CADGenerationAgent(BaseAgent):
 
         # ── 1. Generate OpenSCAD script ──
         openscad_script = generate_openscad(operations, parameters)
-        scad_path = out_dir / "model.scad"
-        scad_path.write_text(openscad_script, encoding="utf-8")
-        output_paths["scad"] = str(scad_path)
-        formats.append("scad")
-        self.logger.info("OpenSCAD script written to %s", scad_path)
+        if export_scad:
+            scad_path = out_dir / "model.scad"
+            scad_path.write_text(openscad_script, encoding="utf-8")
+            output_paths["scad"] = str(scad_path)
+            formats.append("scad")
+            self.logger.info("OpenSCAD script written to %s", scad_path)
 
         # ── 2. Generate CadQuery script ──
         cadquery_script = generate_cadquery_script(operations, parameters)

@@ -737,12 +737,23 @@ def _extract_dxf_primitives(data: dict[str, Any]) -> dict[str, Any]:
                 })
 
     image_shape = None
+    image_width = None
+    image_height = None
     # Try to get image shape from header_vars if available
     header_vars = data.get("header_vars", {})
     extmin = header_vars.get("$EXTMIN")
     extmax = header_vars.get("$EXTMAX")
     if extmin and extmax:
-        image_shape = (extmin, extmax)
+        # Convert coordinate tuples to (height, width) format
+        # matching the raster pipeline's (img_h, img_w) convention
+        try:
+            min_x, min_y = float(extmin.split(",")[0] if isinstance(extmin, str) else extmin[0] if hasattr(extmin, "__getitem__") else 0), float(extmin.split(",")[1] if isinstance(extmin, str) else extmin[1] if hasattr(extmin, "__getitem__") else 0)
+            max_x, max_y = float(extmax.split(",")[0] if isinstance(extmax, str) else extmax[0] if hasattr(extmax, "__getitem__") else 0), float(extmax.split(",")[1] if isinstance(extmax, str) else extmax[1] if hasattr(extmax, "__getitem__") else 0)
+            image_width = int(max_x - min_x)
+            image_height = int(max_y - min_y)
+            image_shape = (image_height, image_width)
+        except (ValueError, TypeError, IndexError):
+            pass
 
     return {
         "lines": lines,
@@ -751,8 +762,8 @@ def _extract_dxf_primitives(data: dict[str, Any]) -> dict[str, Any]:
         "contours": contours,
         "symbols": symbols,
         "image_shape": image_shape,
-        "image_width": None,
-        "image_height": None,
+        "image_width": image_width,
+        "image_height": image_height,
         "morphology": None,
         "preprocessing": {"source": "dxf", "entity_count": len(entities)},
     }

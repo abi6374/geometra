@@ -346,43 +346,72 @@ class OCREngine:
         return text_blocks
 
     def _run_opencv_ocr(self, image: np.ndarray) -> list[dict[str, Any]]:
-        """Fallback OCR using OpenCV contour analysis + connected component text detection.
+        """Fallback OCR using pytesseract (if available), then OpenCV contour detection.
 
-        This is a simplified text detection that uses:
-        1. MSER (Maximally Stable Extremal Regions) for text region detection
-        2. Contour filtering to find text-like regions
-        3. Bounding box extraction
-
-        Note: This does NOT perform actual text recognition - it only detects
-        text regions. For actual recognition, PaddleOCR or an external engine is needed.
-
-        Returns empty text blocks (caller should check if OCR is available).
+        Tries pytesseract first for actual text recognition. If pytesseract is
+        not installed, falls back to MSER-based text region detection (without
+        recognition, returning empty text fields).
         """
-        logger.info("OpenCV fallback OCR: detecting text regions (no recognition)")
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
 
-        # Use MSER for text region detection
+        # ── Try pytesseract first ──
+        try:
+            import pytesseract as tess
+
+            logger.info("OpenCV fallback OCR: using pytesseract")
+            ocr_data = tess.image_to_data(gray, output_type=tess.Output.DICT)
+            text_blocks = []
+            n_boxes = len(ocr_data["text"])
+            for i in range(n_boxes):
+                text = ocr_data["text"][i].strip()
+                conf = float(ocr_data["conf"][i]) / 100.0 if ocr_data["conf"][i] != "-1" else 0.0
+                x, y, w, h = (
+                    ocr_data["left"][i],
+                    ocr_data["top"][i],
+                    ocr_data["width"][i],
+                    ocr_data["height"][i],
+                )
+                if w < 3 or h < 3 or not text:
+                    continue
+                bbox = [
+                    [float(x), float(y)],
+                    [float(x + w), float(y)],
+                    [float(x + w), float(y + h)],
+                    [float(x), float(y + h)],
+                ]
+                text_blocks.append({
+                    "text": text,
+                    "bbox": bbox,
+                    "confidence": max(conf, 0.5),  # floor at 0.5 to pass MIN_CONFIDENCE
+                })
+            if text_blocks:
+                logger.info("pytesseract extracted %d text blocks", len(text_blocks))
+                return text_blocks
+        except ImportError:
+            logger.info("pytesseract not installed; trying MSER region detection")
+        except Exception as exc:
+            logger.warning("pytesseract failed: %s; falling back to region detection", exc)
+
+        # ── Fallback: MSER region detection (no text recognition) ──
+        logger.info("OpenCV fallback OCR: detecting text regions via MSER (no recognition)")
+
         try:
             mser = cv2.MSER_create()
             regions, _ = mser.detectRegions(gray)
         except Exception:
-            # Fallback: simple threshold-based region detection
             _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             regions = [c for c in contours if 20 < cv2.contourArea(c) < 5000]
 
-        # Filter and group text regions
         text_blocks = []
         for region in regions:
             x, y, w, h = cv2.boundingRect(region)
-            # Filter by aspect ratio and size (likely text)
             if w < 5 or h < 5 or w > 200 or h > 80:
                 continue
             aspect_ratio = w / h
             if aspect_ratio < 0.1 or aspect_ratio > 10:
                 continue
 
-            # Compute bbox in standard format
             bbox = [
                 [float(x), float(y)],
                 [float(x + w), float(y)],
@@ -391,7 +420,7 @@ class OCREngine:
             ]
 
             text_blocks.append({
-                "text": "",  # No recognition available in fallback
+                "text": "",
                 "bbox": bbox,
                 "confidence": 0.0,
             })

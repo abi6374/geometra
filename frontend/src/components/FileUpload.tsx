@@ -1,27 +1,12 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileText, Box, Loader2, CheckCircle, XCircle } from "lucide-react";
+import { Upload, Loader2, CheckCircle, XCircle } from "lucide-react";
 
 interface FileUploadProps {
   onUpload: (file: File) => Promise<void>;
   acceptedExtensions: string[];
 }
 
-const formatDescription: Record<string, string> = {
-  pdf: "PDF Drawing",
-  png: "PNG Image",
-  jpeg: "JPEG Image",
-  jpg: "JPEG Image",
-  tiff: "TIFF Image",
-  tif: "TIFF Image",
-  dxf: "DXF Drawing",
-  dwg: "DWG Drawing",
-  step: "STEP Model",
-  stp: "STEP Model",
-  iges: "IGES Model",
-  stl: "STL Model",
-  obj: "OBJ Model",
-};
 
 export function FileUpload({ onUpload, acceptedExtensions }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);

@@ -40,9 +40,24 @@ logger = logging.getLogger(__name__)
 # ── Experta imports (lazy, with graceful fallback) ────────────────────────────
 
 # Compatibility patch for frozendict (experta dependency) on Python 3.10+
+# frozendict uses collections.Mapping which was removed in Python 3.10.
+# This patch must run before frozendict is imported anywhere in the process.
 import collections
+import collections.abc
 if not hasattr(collections, "Mapping"):
     collections.Mapping = collections.abc.Mapping
+
+# Additionally patch frozendict's internal import if already loaded
+import sys
+try:
+    if "frozendict" in sys.modules:
+        import frozendict
+        if not hasattr(frozendict, "Mapping"):
+            frozendict.Mapping = collections.abc.Mapping
+except ImportError:
+    pass
+except AttributeError:
+    pass
 
 try:
     from experta import (

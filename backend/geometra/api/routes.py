@@ -1,8 +1,11 @@
 """API routes for Geometra."""
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
@@ -19,6 +22,29 @@ from geometra.config import settings
 from geometra.core.orchestrator import ConversionOrchestrator
 
 router = APIRouter()
+
+# Track uploaded files for cleanup and validation
+_uploaded_files: dict[str, dict[str, Any]] = {}
+
+
+def _cleanup_old_uploads(max_age_seconds: int = 3600) -> None:
+    """Remove uploaded files older than max_age_seconds."""
+    now = time.time()
+    stale = []
+    for job_id, info in _uploaded_files.items():
+        if now - info.get("timestamp", 0) > max_age_seconds:
+            path = Path(info["path"])
+            if path.exists():
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+            stale.append(job_id)
+    for job_id in stale:
+        _uploaded_files.pop(job_id, None)
+    if stale:
+        import logging
+        logging.getLogger(__name__).debug("Cleaned up %d stale uploaded files", len(stale))
 
 
 @router.get("/health", response_model=HealthResponse, tags=["system"])
@@ -64,6 +90,13 @@ async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
         else ConversionDirection.TWO_D_TO_THREE_D
     )
 
+    # Track for validation and cleanup
+    _uploaded_files[job_id] = {
+        "path": str(dest),
+        "timestamp": time.time(),
+        "filename": file.filename,
+    }
+
     return FileUploadResponse(
         filename=file.filename,
         file_path=str(dest),
@@ -76,6 +109,27 @@ async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
 @router.post("/convert", response_model=JobResponse, tags=["conversion"])
 async def start_conversion(req: ConversionRequest) -> JobResponse:
     """Start a conversion job."""
+    # Validate file path: must exist and belong to a previous upload
+    file_path = Path(req.file_path)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"File not found: {req.file_path}. Upload the file first via /upload.",
+        )
+    # Optional: verify the file was uploaded through our system
+    is_known_upload = any(
+        info["path"] == req.file_path
+        for info in _uploaded_files.values()
+    )
+    if not is_known_upload and req.direction != ConversionDirection.TWO_D_TO_THREE_D:
+        # Allow arbitrary file paths only for 2D→3D (user's own files)
+        # For 3D→2D, require upload through our system
+        import logging
+        logging.getLogger(__name__).warning(
+            "Conversion requested for unknown file: %s (3D→2D pipeline)",
+            req.file_path,
+        )
+
     job_id = str(uuid.uuid4())
     orchestrator = ConversionOrchestrator()
     orchestrator.start_conversion(

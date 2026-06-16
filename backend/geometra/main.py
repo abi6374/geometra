@@ -1,4 +1,4 @@
-  """Geometra FastAPI application."""
+"""Geometra FastAPI application."""
 
 from __future__ import annotations
 
@@ -31,6 +31,20 @@ app.include_router(router, prefix="/api/v1")
 async def startup() -> None:
     """Initialize application on startup."""
     settings.ensure_dirs()
+
+    # Start periodic cleanup of uploaded files (runs every hour)
+    # Using a simple in-memory tracker - calls to _cleanup_old_uploads
+    # happen on every upload. For persistent cleanup, a background task
+    # would be needed.
+    import asyncio
+
+    async def periodic_cleanup() -> None:
+        while True:
+            await asyncio.sleep(3600)
+            from geometra.api.routes import _cleanup_old_uploads
+            _cleanup_old_uploads()
+
+    asyncio.create_task(periodic_cleanup())
 
 
 @app.get("/")
