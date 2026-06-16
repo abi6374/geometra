@@ -111,7 +111,7 @@ def pipeline_job(
     from geometra.agents.agent_03_ocr_annotation import OCRAnnotationAgent
     from geometra.agents.agent_04_feature_recognition import FeatureRecognitionAgent
     from geometra.agents.agent_05_engineering_reasoning import EngineeringReasoningAgent
-    from geometra.agents.agent_06_cad_generation import CADGenerationAgent
+    from geometra.agents.agent_06 import CADGenerationAgent
     from geometra.agents.agent_07_validation import ValidationAgent
     from geometra.agents.agent_08_3d_to_2d import ThreeDToTwoDConversionAgent
 
@@ -129,22 +129,26 @@ def pipeline_job(
             # ── Step 2: Drawing Understanding ──
             orchestrator.update_job(job_id, progress=0.15, message="Understanding drawing geometry")
             agent_2 = DrawingUnderstandingAgent()
-            primitives = agent_2.extract(doc)
+            primitives = agent_2.process(doc)
 
             # ── Step 3: OCR & Annotations ──
             orchestrator.update_job(job_id, progress=0.30, message="Extracting annotations and dimensions")
             agent_3 = OCRAnnotationAgent()
-            annotations = agent_3.extract(doc)
+            annotations = agent_3.process(doc)
 
             # ── Step 4: Feature Recognition ──
             orchestrator.update_job(job_id, progress=0.45, message="Recognizing manufacturing features")
             agent_4 = FeatureRecognitionAgent()
-            features = agent_4.detect(doc)
+            features = agent_4.process(primitives)
 
             # ── Step 5: Engineering Reasoning ──
             orchestrator.update_job(job_id, progress=0.60, message="Applying engineering reasoning")
             agent_5 = EngineeringReasoningAgent()
-            param_tree = agent_5.reason(primitives, annotations, features)
+            param_tree = agent_5.process({
+                "primitives": primitives,
+                "annotations": annotations,
+                "features": features,
+            })
 
             # ── Step 6: CAD Generation ──
             orchestrator.update_job(job_id, progress=0.75, message="Generating CAD model")
